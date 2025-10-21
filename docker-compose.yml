@@ -6,10 +6,12 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: truongnguyen
       MYSQL_DATABASE: order-service
+      TZ: Asia/Ho_Chi_Minh
     ports:
       - "3307:3306"
     volumes:
-      - ./mysql-init:/docker-entrypoint-initdb.d
+      - order-data:/var/lib/mysql
+#      - ./mysql-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: [ "CMD-SHELL", 'mysql -h localhost -u root -p$$MYSQL_ROOT_PASSWORD -e "USE `$$MYSQL_DATABASE`"' ]
       interval: 5s
@@ -22,11 +24,14 @@ services:
     image: mysql:8
     environment:
       MYSQL_ROOT_PASSWORD: truongnguyen
+# lệnh cho image mysql tự động tạo một database rỗng
       MYSQL_DATABASE: product-service
+      TZ: Asia/Ho_Chi_Minh
     ports:
       - "3308:3306"
     volumes:
-      - ./mysql-init:/docker-entrypoint-initdb.d
+      - product-data:/var/lib/mysql
+#      - ./mysql-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: [ "CMD-SHELL", 'mysql -h localhost -u root -p$$MYSQL_ROOT_PASSWORD -e "USE `$$MYSQL_DATABASE`"' ]
       interval: 5s
@@ -40,10 +45,12 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: truongnguyen
       MYSQL_DATABASE: inventory-service
+      TZ: Asia/Ho_Chi_Minh
     ports:
       - "3309:3306"
     volumes:
-      - ./mysql-init:/docker-entrypoint-initdb.d
+      - inventory-data:/var/lib/mysql
+#      - ./mysql-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: [ "CMD-SHELL", 'mysql -h localhost -u root -p$$MYSQL_ROOT_PASSWORD -e "USE `$$MYSQL_DATABASE`"' ]
       interval: 5s
@@ -56,7 +63,8 @@ services:
     container_name: keycloak-mysql
     image: mysql:8
     volumes:
-      - ./mysql_keycloak_data:/var/lib/mysql
+#      - ./mysql_keycloak_data:/var/lib/mysql
+      - keycloak-db-data:/var/lib/mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: keycloak
@@ -74,25 +82,28 @@ services:
     image: quay.io/keycloak/keycloak:18.0.0
     command: [ "start-dev" ]
     environment:
-      KC_DB: mysql # Tên CSDL
-      KC_DB_URL_HOST: keycloak-mysql # Tên service của CSDL
-      KC_DB_DATABASE: keycloak       # Tên database
-      KC_DB_USERNAME: keycloak       # Username
-      KC_DB_PASSWORD: password       # Password
+      # Biến CSDL (Phải bắt đầu bằng KC_)
+      KC_DB: mysql
+      KC_DB_URL_HOST: keycloak-mysql
+      KC_DB_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: password
 
-      # SỬA Ở ĐÂY: Biến admin cũng thay đổi
-      KC_ADMIN: admin
-      KC_ADMIN_PASSWORD: admin
-#  bảo" Keycloak rằng địa chỉ công khai của nó là http://localhost:8085.
-      KC_HOSTNAME_URL: http://localhost:8085
-      # THÊM CẢ BIẾN CŨ (Wildfly) ĐỂ CHẮC ĂN
+      # Biến Admin (Phải bắt đầu bằng KC_)
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
 
+      # Biến Cổng và Hostname (Phải bắt đầu bằng KC_)
+
+      # Đây là biến ĐÚNG để đổi cổng (thay cho QUARKUS_HTTP_PORT)
+      KC_HTTP_PORT: 8085
+
+      KC_HOSTNAME: keycloak
+      KC_HOSTNAME_URL: http://keycloak:8085
+      KC_HOSTNAME_STRICT: "false"
+
     ports:
-      - "8085:8080"
-#    volumes:
-#      - ./realms/:/opt/keycloak/data/import/
+      - "8085:8085"
     depends_on:
       keycloak-mysql:
         condition: service_healthy
@@ -149,14 +160,13 @@ services:
     container_name: api-gateway
     ports:
       - "8181:8080"
-    expose:
-      - "8181"
     environment:
       #cho phép chọn profile cấu hình phù hợp. docker (application-docker.yml hoặc .properties)
       - SPRING_PROFILES_ACTIVE=docker
       - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY= TRACE
       - eureka.client.serviceUrl.defaultZone=http://eureka:password@discovery-server:8761/eureka
       - management.zipkin.tracing.endpoint=http://zipkin:9411/api/v2/spans
+      - spring.security.oauth2.resourceserver.jwt.issuer-uri=http://keycloak:8085/realms/spring-boot-microservices-realm
     depends_on:
       - zipkin
       - discovery-server
@@ -175,6 +185,8 @@ services:
       SPRING_JPA_DATABASE-PLATFORM: org.hibernate.dialect.MySQL8Dialect
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:password@discovery-server:8761/eureka
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+
     depends_on:
       mysql-product:
         condition: service_healthy # <-- Sửa ở đây
@@ -263,5 +275,10 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
-
-
+# --- KHAI BÁO TẤT CẢ CÁC NAMED VOLUMES ---
+volumes:
+  product-data:
+  order-data:
+#  user-data:
+  inventory-data:
+  keycloak-db-data:
