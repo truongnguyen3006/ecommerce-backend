@@ -1,4 +1,4 @@
-package com.myexampleproject.orderservice.event;
+package com.myexampleproject.inventoryservice.event;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,4 +9,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class OrderPlacedEvent {
     private String orderNumber;
+
 }
+
