@@ -142,19 +142,6 @@ services:
     networks:
       - micro_net
 
-#  # Zipkin
-#  zipkin:
-#    image: openzipkin/zipkin
-#    container_name: zipkin
-#    environment:
-#      - SERVER_PORT=9411
-#      - SERVER_ADDRESS=0.0.0.0
-#    ports:
-#      - "9411:9411"
-#    networks:
-#      - micro_net
-
-
   ## Eureka Server
   discovery-server:
     image: truongnguyen3006/discovery-server:latest
@@ -230,54 +217,6 @@ services:
     networks:
       - micro_net
 
-  # --- KỊCH BẢN "SYNC" (Chỉ chạy khi --profile sync) ---
-  ## Order-Service Docker Compose Config
-#  order-service-sync:
-#    container_name: order-service
-#    image: truongnguyen3006/order-service:1.0-sync
-#    profiles: ["sync"]
-#    environment:
-#      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-order:3306/order-service
-#      SPRING_DATASOURCE_USERNAME: root
-#      SPRING_DATASOURCE_PASSWORD: truongnguyen
-#      SPRING_JPA_DATABASE-PLATFORM: org.hibernate.dialect.MySQL8Dialect
-#      SPRING_PROFILES_ACTIVE: docker
-#      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:password@discovery-server:8761/eureka
-#    depends_on:
-#      mysql-order:
-#        condition: service_healthy # <-- Sửa ở đây
-#      zipkin:
-#        condition: service_started
-#      discovery-server:
-#        condition: service_started
-#      api-gateway:
-#        condition: service_started
-#    networks:
-#      - micro_net
-#
-#  ## Inventory-Service Docker Compose Config
-#  inventory-service-sync:
-#    container_name: inventory-service
-#    image: truongnguyen3006/inventory-service:1.0-sync
-#    profiles: ["sync"]
-#    environment:
-#      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-inventory:3306/inventory-service
-#      SPRING_DATASOURCE_USERNAME: root
-#      SPRING_DATASOURCE_PASSWORD: truongnguyen
-#      SPRING_JPA_DATABASE-PLATFORM: org.hibernate.dialect.MySQL8Dialect
-#      #      SPRING_PROFILES_ACTIVE: docker
-#      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:password@discovery-server:8761/eureka
-#    depends_on:
-#      mysql-inventory:
-#        condition: service_healthy # <-- Sửa ở đây
-#      discovery-server:
-#        condition: service_started
-#      api-gateway:
-#        condition: service_started
-#    networks:
-#      - micro_net
-
-  # --- KỊCH BẢN "ASYNC" (Chỉ chạy khi --profile async) ---
   ## Order-Service Docker Compose Config
   order-service-async:
     container_name: order-service
