@@ -71,7 +71,6 @@ public class OrderService {
             },
             containerFactory = "kafkaListenerContainerFactory" // <-- Dùng factory chung
     )
-    @Transactional // Đặt Transactional ở đây để bao bọc TẤT CẢ logic
     public void handleOrderEvents(List<ConsumerRecord<String, Object>> records) {
         log.info("Received a batch of {} events", records.size());
 
@@ -108,22 +107,15 @@ public class OrderService {
                         log.warn("Received message on unhandled topic: {}", topic);
                 }
             } catch (Exception e) {
-                // Khi xử lý batch, 1 lỗi có thể làm toàn bộ batch bị retry
-                // Tạm thời log lỗi và cho qua message tiếp theo
-                log.error("Error processing individual event in batch from topic {} for key {}: ", topic, record.key(), e);
-                // Hoặc ném cả RuntimeException để retry toàn bộ batch
-                // throw new RuntimeException("Failed to process batch, will retry.", e);
+                log.error("LỖI KHI XỬ LÝ MESSAGE: {}. Sẽ KHÔNG retry.", record.key(), e);
             }
         }
-        // Transaction sẽ commit 1 lần duy nhất ở đây
-        log.info("Batch of {} events processed.", records.size());
     }
 
 
-    // === CÁC HÀM XỬ LÝ (PRIVATE) ===
-    // (Bỏ @KafkaListener và @Transactional khỏi các hàm này)
 
-    private void handleOrderPlacement(OrderPlacedEvent event) {
+    @Transactional
+    protected void handleOrderPlacement(OrderPlacedEvent event) {
         log.info("Async Save: Saving Order {} to database...", event.getOrderNumber());
 
         Order order = new Order();
@@ -139,7 +131,8 @@ public class OrderService {
         log.info("Async Save: Order {} saved to database.", event.getOrderNumber());
     }
 
-    private void handleOrderFailure(OrderFailedEvent failedEvent) {
+    @Transactional
+    protected void handleOrderFailure(OrderFailedEvent failedEvent) {
         log.info("Using OrderFailedEvent class: {}", failedEvent.getClass().getName());
         log.warn("INVENTORY FAILED: Received feedback for Order {}. Reason: {}",
                 failedEvent.getOrderNumber(), failedEvent.getReason());
@@ -156,7 +149,8 @@ public class OrderService {
         }
     }
 
-    private void handlePaymentSuccess(PaymentProcessedEvent paymentProcessedEvent) {
+    @Transactional
+    protected void handlePaymentSuccess(PaymentProcessedEvent paymentProcessedEvent) {
         log.info("SUCCESS: Received PaymentProcessedEvent for Order {}. Payment ID: {}. Updating status...",
                 paymentProcessedEvent.getOrderNumber(), paymentProcessedEvent.getPaymentId());
 
@@ -174,7 +168,8 @@ public class OrderService {
         }
     }
 
-    private void handlePaymentFailure(PaymentFailedEvent paymentFailedEvent) {
+    @Transactional
+    protected void handlePaymentFailure(PaymentFailedEvent paymentFailedEvent) {
         log.warn("FAILED: Received PaymentFailedEvent for Order {}. Reason: {}. Updating status...",
                 paymentFailedEvent.getOrderNumber(), paymentFailedEvent.getReason());
 

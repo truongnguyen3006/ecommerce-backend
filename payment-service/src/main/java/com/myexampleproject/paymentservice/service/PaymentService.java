@@ -49,13 +49,6 @@ public class PaymentService {
     private boolean processPayment(OrderValidatedEvent event) {
         log.info("Simulating payment processing for Order {}...", event.getOrderNumber());
         // Thêm logic phức tạp hơn nếu muốn (ví dụ: random thành công/thất bại)
-        try {
-            // Giả lập thời gian xử lý
-            Thread.sleep(500); // Chờ 0.5 giây
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
         return true; // Luôn trả về thành công cho đơn giản
     }
 }

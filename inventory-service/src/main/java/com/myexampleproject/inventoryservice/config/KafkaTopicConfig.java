@@ -8,8 +8,8 @@ import org.springframework.kafka.config.TopicBuilder;
 @Configuration
 public class KafkaTopicConfig {
 
-    private final int NUM_PARTITIONS = 3; // Đồng bộ TẤT CẢ về 3
-    private final short REPLICAS = 1;     // Dùng 1 cho local
+    private final int NUM_PARTITIONS = 10;
+    private final short REPLICAS = 1;
 
     // --- Các topic của Inventory (Đã có) ---
     @Bean

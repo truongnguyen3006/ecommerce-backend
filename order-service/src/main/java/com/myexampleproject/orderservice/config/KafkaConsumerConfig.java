@@ -49,26 +49,12 @@ public class KafkaConsumerConfig {
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(genericConsumerFactory());
 
-        // Set concurrency = 1 (mặc định)
-        // Khi chạy 3 instance, bạn sẽ có 3 consumer thread.
-        // Thread 1 (Instance 0) sẽ lấy TẤT CẢ các partition 0 (của cả 4 topic)
-        // Thread 2 (Instance 1) sẽ lấy TẤT CẢ các partition 1 (của cả 4 topic)
-        // Thread 3 (Instance 2) sẽ lấy TẤT CẢ các partition 2 (của cả 4 topic)
-        // Điều này đảm bảo tất cả event cho 1 order (cùng key) sẽ vào CÙNG 1 instance
-        // Tăng số thread consumer trên MỖI instance (ví dụ: 10)
-        // Tổng thread = 10 * 3 instance = 30 consumer threads
         factory.setConcurrency(10);
 
         // *** BẬT CHẾ ĐỘ BATCH ***
         // Đây là tối ưu CỰC LỚN
         factory.setBatchListener(true);
-
         return factory;
     }
 
-    // --- XÓA TẤT CẢ 8 BEAN CŨ BÊN DƯỚI ---
-    // (Xóa orderPlacedConsumerFactory, orderPlacedKafkaListenerContainerFactory,
-    //  orderFailedConsumerFactory, orderFailedKafkaListenerContainerFactory,
-    //  paymentProcessedConsumerFactory, paymentProcessedKafkaListenerContainerFactory,
-    //  paymentFailedConsumerFactory, paymentFailedKafkaListenerContainerFactory)
 }
