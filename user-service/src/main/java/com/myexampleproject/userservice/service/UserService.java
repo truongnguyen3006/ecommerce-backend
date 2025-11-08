@@ -6,6 +6,7 @@ import com.myexampleproject.userservice.model.User;
 import com.myexampleproject.userservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
 
@@ -13,10 +14,13 @@ import java.util.List;
 @Service // Đánh dấu đây là một Bean Service
 public class UserService {
     private final UserRepository userRepository;
-    //    users -> mapToUserResponse(users)
-    //    map(this::mapToUserResponse):
-    //    Áp dụng hàm mapToUserResponse cho từng User
-    //    trong luồng để biến nó thành một UserResponse.
+
+    // Keycloak Admin API
+    private final WebClient keycloakClient = WebClient.builder()
+            .baseUrl("http://keycloak:8085/admin/realms/spring-boot-microservices-realm")
+            .defaultHeader("Authorization", "Bearer <admin-access-token>") // bạn có thể inject qua config
+            .build();
+
     public List<UserResponse> getAllUsers(){
         List<User> users = userRepository.findAll();
         return users.stream().map(this::mapToUserResponse).toList();
@@ -27,16 +31,32 @@ public class UserService {
         return mapToUserResponse(user);
     }
 
-    public User createUser(UserRequest  userRequest){
-        // Đây là nơi xử lý logic nghiệp vụ
-        // Ví dụ: Kiểm tra email đã tồn tại chưa
+    // Tạo user trong Keycloak + DB app
+    public UserResponse createUser(UserRequest userRequest){
+        // 1️⃣ Gọi API Keycloak để tạo user
+        String keycloakId = createUserInKeycloak(userRequest);
+
+        // 2️⃣ Lưu user profile vào DB
         User user = User.builder()
-                .username(userRequest.getUsername())
-                .password(userRequest.getPassword())
+                .keycloakId(keycloakId)
+                .fullName(userRequest.getFullName())
                 .email(userRequest.getEmail())
-                .role("USER")
+                .phoneNumber(userRequest.getPhoneNumber())
+                .address(userRequest.getAddress())
                 .build();
-        return userRepository.save(user);
+
+        userRepository.save(user);
+        return mapToUserResponse(user);
+    }
+
+    private String createUserInKeycloak(UserRequest req) {
+        // Gửi request tạo user tới Keycloak Admin REST API
+        // (Giả lập logic, bạn có thể dùng WebClient hoặc Keycloak Admin Client SDK)
+        // POST /admin/realms/{realm}/users
+        // Sau khi tạo user, Keycloak trả về Location header chứa ID user
+
+        // Tạm thời giả lập trả về ID ngẫu nhiên
+        return java.util.UUID.randomUUID().toString();
     }
 
     public void deleteUserById(Long id){
@@ -47,11 +67,14 @@ public class UserService {
         userRepository.deleteById(id);
     }
 
-    private UserResponse mapToUserResponse(User  user) {
+    private UserResponse mapToUserResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
-                .username(user.getUsername())
+                .keycloakId(user.getKeycloakId())
+                .fullName(user.getFullName())
                 .email(user.getEmail())
+                .phoneNumber(user.getPhoneNumber())
+                .address(user.getAddress())
                 .build();
     }
 

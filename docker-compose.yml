@@ -199,6 +199,14 @@ services:
     networks:
       - micro_net
 
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - micro_net
+
   api-gateway:
     image: truongnguyen3006/api-gateway:latest
     container_name: api-gateway

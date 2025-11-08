@@ -5,6 +5,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myexampleproject.orderservice.dto.OrderResponse;
 import com.myexampleproject.orderservice.event.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -78,6 +79,46 @@ public class OrderService {
 
         // Hàm này KẾT THÚC NGAY LẬP TỨC
         // HTTP 200 OK được trả về trong khi Kafka producer tự xử lý trong nền.
+    }
+
+    @Transactional(readOnly = true) // Giao dịch chỉ đọc, nhanh hơn
+    public OrderResponse getOrderDetails(String orderNumber) {
+        log.info("Fetching order details for: {}", orderNumber);
+
+        // 1. Tìm Order trong CSDL
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderNumber));
+
+        // 2. Map từ Entity (Order) sang DTO (OrderResponse)
+        return mapToOrderResponse(order);
+    }
+
+    /**
+     * Helper: Chuyển đổi Entity Order -> DTO OrderResponse.
+     */
+    private OrderResponse mapToOrderResponse(Order order) {
+        return OrderResponse.builder()
+                .id(order.getId())
+                .orderNumber(order.getOrderNumber())
+                .status(order.getStatus())
+                .orderLineItemsList(order.getOrderLineItemsList()
+                        .stream()
+                        .map(this::mapToOrderLineItemsDto) // Tái sử dụng logic map
+                        .toList())
+                .build();
+    }
+
+    /**
+     * Helper: Chuyển đổi Entity OrderLineItems -> DTO OrderLineItemsDto.
+     * (Đây là logic ngược lại với hàm mapToDto bạn đã có)
+     */
+    private OrderLineItemsDto mapToOrderLineItemsDto(OrderLineItems orderLineItems) {
+        return OrderLineItemsDto.builder()
+                .id(orderLineItems.getId()) // Giả sử DTO của bạn cũng có Id
+                .skuCode(orderLineItems.getSkuCode())
+                .price(orderLineItems.getPrice())
+                .quantity(orderLineItems.getQuantity())
+                .build();
     }
 
     @KafkaListener(

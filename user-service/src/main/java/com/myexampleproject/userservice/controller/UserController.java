@@ -23,7 +23,7 @@ public class UserController {
 //  ĐẦU VÀO: Dùng DTO Request
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public User createUser(@RequestBody UserRequest userRequest) {
+    public UserResponse createUser(@RequestBody UserRequest userRequest) {
         return userService.createUser(userRequest);
     }
 
