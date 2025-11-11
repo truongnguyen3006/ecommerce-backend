@@ -11,7 +11,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UserRequest {
-    private String username;
+    private String username;    // Dùng để tạo user trong Keycloak
     private String email;
-    private String password;
+    private String password;    // Gửi cho Keycloak, không lưu trong DB
+    private String fullName;
+    private String phoneNumber;
+    private String address;
 }

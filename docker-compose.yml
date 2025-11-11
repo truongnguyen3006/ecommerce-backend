@@ -157,6 +157,13 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    command:
+      - bash
+      - -c
+      - |
+        echo "auto.create.topics.enable=true" >> /etc/kafka/kafka.properties
+        /etc/confluent/docker/run
+
     healthcheck:
       # SỬA: Healthcheck nên dùng listener nội bộ (an toàn hơn)
       test: [ "CMD-SHELL", "kafka-topics --bootstrap-server broker:29092 --list" ]
@@ -196,6 +203,14 @@ services:
       - "8761:8761"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - micro_net
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: zipkin
+    ports:
+      - "9411:9411"
     networks:
       - micro_net
 

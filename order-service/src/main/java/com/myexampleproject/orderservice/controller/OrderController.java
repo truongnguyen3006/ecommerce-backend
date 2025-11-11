@@ -1,5 +1,11 @@
 package com.myexampleproject.orderservice.controller;
 
+// === IMPORT MỚI CẦN THÊM ===
+import com.myexampleproject.orderservice.dto.OrderResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+// === KẾT THÚC IMPORT MỚI ===
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,11 +27,22 @@ public class OrderController {
 
     private final OrderService orderService;
 
+    // --- PHƯƠNG THỨC POST (Bạn đã có) ---
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     public String placeOrder(@RequestBody OrderRequest orderRequest) {
         log.info("Placing Order (Event-Driven Mode)");
         orderService.placeOrder(orderRequest);
         return "Order Received! Your order is being processed.";
+    }
+
+    // ==========================================================
+    // === PHƯƠNG THỨC GET MỚI CẦN BỔ SUNG ===
+    // ==========================================================
+    @GetMapping("/{orderNumber}")
+    @ResponseStatus(HttpStatus.OK)
+    public OrderResponse getOrderDetails(@PathVariable String orderNumber) {
+        log.info("Fetching order details for orderNumber: {}", orderNumber);
+        return orderService.getOrderDetails(orderNumber);
     }
 }

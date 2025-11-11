@@ -1,5 +1,6 @@
 package com.myexampleproject.inventoryservice.controller;
 
+import com.myexampleproject.inventoryservice.event.InventoryAdjustmentEvent;
 import com.myexampleproject.inventoryservice.service.InventoryService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -15,10 +16,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.config.StreamsBuilderFactoryBean;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -32,14 +31,36 @@ public class InventoryController {
 
     private final StreamsBuilderFactoryBean factoryBean;
     private final RestTemplate restTemplate = new RestTemplate();
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Value("${spring.kafka.streams.properties.application.server.id}")
     private String applicationServerConfig;
     private HostInfo thisHostInfo;
 
     @Autowired
-    public InventoryController(StreamsBuilderFactoryBean factoryBean) {
+    public InventoryController(StreamsBuilderFactoryBean factoryBean, KafkaTemplate<String, Object> kafkaTemplate) {
         this.factoryBean = factoryBean;
+        // === THÊM DÒNG NÀY ===
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    @PostMapping("/adjust")
+    public ResponseEntity<?> adjustInventory(@RequestBody InventoryAdjustmentEvent adjustmentEvent) {
+        if (adjustmentEvent.getSkuCode() == null || adjustmentEvent.getAdjustmentQuantity() == 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "skuCode and adjustmentQuantity must be provided"));
+        }
+
+        log.info("ADMIN ACTION: Adjusting inventory for {} by {}. Reason: {}",
+                adjustmentEvent.getSkuCode(),
+                adjustmentEvent.getAdjustmentQuantity(),
+                adjustmentEvent.getReason());
+
+        // Gửi "lệnh" này vào Kafka
+        kafkaTemplate.send("inventory-adjustment-topic",
+                adjustmentEvent.getSkuCode(),
+                adjustmentEvent);
+
+        return ResponseEntity.accepted().body(Map.of("status", "Adjustment request received and is being processed."));
     }
 
     private HostInfo getThisHostInfo() {

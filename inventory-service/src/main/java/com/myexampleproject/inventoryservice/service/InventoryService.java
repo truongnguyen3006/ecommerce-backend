@@ -64,6 +64,8 @@ public class InventoryService {
                 createJsonSchemaSerde(OrderValidatedEvent.class);
         Serde<OrderFailedEvent> orderFailedSerde =
                 createJsonSchemaSerde(OrderFailedEvent.class);
+        Serde<InventoryAdjustmentEvent> adjustmentSerde =
+                createJsonSchemaSerde(InventoryAdjustmentEvent.class);
 
         // --- BƯỚC 1: ĐỊNH NGHĨA STATE STORE ---
         StoreBuilder<KeyValueStore<String, Integer>> inventoryStoreBuilder =
@@ -107,11 +109,56 @@ public class InventoryService {
                             log.warn("[Streams] SKU {} already exists. Ignoring.", skuCode);
                         }
                     }
-
                     @Override
                     public void close() {}
                 },
                 INVENTORY_STORE_NAME
+        );
+
+        // === LOGIC MỚI: XỬ LÝ TOPIC ĐIỀU CHỈNH (ADJUSTMENT) ===
+        // ==========================================================
+        KStream<String, InventoryAdjustmentEvent> adjustmentStream = builder.stream(
+                "inventory-adjustment-topic",
+                Consumed.with(Serdes.String(), adjustmentSerde)
+        );
+
+        adjustmentStream.process(
+                () -> new Processor<String, InventoryAdjustmentEvent, Void, Void>() {
+                    private KeyValueStore<String, Integer> store;
+                    private ProcessorContext<Void, Void> context;
+
+                    @Override
+                    public void init(ProcessorContext<Void, Void> context) {
+                        this.context = context;
+                        this.store = context.getStateStore(INVENTORY_STORE_NAME);
+                    }
+
+                    @Override
+                    public void process(Record<String, InventoryAdjustmentEvent> record) {
+                        String skuCode = record.key();
+                        InventoryAdjustmentEvent event = record.value();
+                        if (skuCode == null) return;
+
+                        // Lấy số lượng hiện tại
+                        Integer currentStock = store.get(skuCode);
+                        if (currentStock == null) {
+                            currentStock = 0; // Nếu chưa có, coi như là 0
+                        }
+
+                        // Tính số lượng mới
+                        int newStock = currentStock + event.getAdjustmentQuantity();
+
+                        // Cập nhật lại kho
+                        store.put(skuCode, newStock);
+
+                        log.info("[Streams][ADMIN] Adjusted stock for {}. Reason: {}. Old: {}, New: {}",
+                                skuCode, event.getReason(), currentStock, newStock);
+                    }
+
+                    @Override
+                    public void close() {}
+                },
+                INVENTORY_STORE_NAME // Vẫn dùng chung 1 State Store
         );
 
         // --- BƯỚC 3: XỬ LÝ "order-processing-topic" (Dùng API Mới) ---

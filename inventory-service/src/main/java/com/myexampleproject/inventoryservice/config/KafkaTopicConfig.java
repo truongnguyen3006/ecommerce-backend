@@ -61,4 +61,12 @@ public class KafkaTopicConfig {
                 .replicas(REPLICAS)
                 .build();
     }
+
+    @Bean
+    public NewTopic inventoryAdjustmentTopic() {
+        return TopicBuilder.name("inventory-adjustment-topic")
+                .partitions(NUM_PARTITIONS) // Dùng 10 partitions
+                .replicas(REPLICAS)
+                .build();
+    }
 }

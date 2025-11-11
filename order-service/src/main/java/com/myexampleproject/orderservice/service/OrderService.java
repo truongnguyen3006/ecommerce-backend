@@ -5,6 +5,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myexampleproject.orderservice.dto.OrderResponse;
 import com.myexampleproject.orderservice.event.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -80,12 +81,50 @@ public class OrderService {
         // HTTP 200 OK được trả về trong khi Kafka producer tự xử lý trong nền.
     }
 
+    @Transactional(readOnly = true) // Giao dịch chỉ đọc, nhanh hơn
+    public OrderResponse getOrderDetails(String orderNumber) {
+        log.info("Fetching order details for: {}", orderNumber);
+
+        // 1. Tìm Order trong CSDL
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderNumber));
+
+        // 2. Map từ Entity (Order) sang DTO (OrderResponse)
+        return mapToOrderResponse(order);
+    }
+
+    /**
+     * Helper: Chuyển đổi Entity Order -> DTO OrderResponse.
+     */
+    private OrderResponse mapToOrderResponse(Order order) {
+        return OrderResponse.builder()
+                .id(order.getId())
+                .orderNumber(order.getOrderNumber())
+                .status(order.getStatus())
+                .orderLineItemsList(order.getOrderLineItemsList()
+                        .stream()
+                        .map(this::mapToOrderLineItemsDto) // Tái sử dụng logic map
+                        .toList())
+                .build();
+    }
+
+    /**
+     * Helper: Chuyển đổi Entity OrderLineItems -> DTO OrderLineItemsDto.
+     * (Đây là logic ngược lại với hàm mapToDto bạn đã có)
+     */
+    private OrderLineItemsDto mapToOrderLineItemsDto(OrderLineItems orderLineItems) {
+        return OrderLineItemsDto.builder()
+                .id(orderLineItems.getId()) // Giả sử DTO của bạn cũng có Id
+                .skuCode(orderLineItems.getSkuCode())
+                .price(orderLineItems.getPrice())
+                .quantity(orderLineItems.getQuantity())
+                .build();
+    }
+
     @KafkaListener(
             topics = {
                     "order-placed-topic",
                     "order-failed-topic",
-                    "payment-processed-topic",
-                    "payment-failed-topic"
             },
             containerFactory = "kafkaListenerContainerFactory" // <-- Dùng factory chung
     )
@@ -130,6 +169,32 @@ public class OrderService {
         }
     }
 
+    public <T> T toEvent(Object payload, Class<T> clazz) {
+        return objectMapper.convertValue(payload, clazz);
+    }
+
+
+    @KafkaListener(
+            topics = "payment-validated-topic",
+            groupId = "order-group",
+            containerFactory = "kafkaListenerContainerFactory"
+    )
+    public void handleValidatedPayment(List<ConsumerRecord<String, Object>> records) {
+        for (ConsumerRecord<String, Object> rec : records) {
+            try {
+                Object payload = rec.value(); // <-- LẤY GIÁ TRỊ
+                PaymentProcessedEvent event =
+                        objectMapper.convertValue(payload, PaymentProcessedEvent.class);
+                handlePaymentSuccess(event);
+            } catch (Exception e) {
+                log.error("❌ Error converting/processing PaymentValidatedEvent at {}: {}",
+                        rec.topic() + "-" + rec.partition() + "@" + rec.offset(), e.getMessage(), e);
+            }
+        }
+    }
+
+
+
 
 
     @Transactional
@@ -147,6 +212,9 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Async Save: Order {} saved to database.", event.getOrderNumber());
+        // Sau khi lưu order vào DB
+        OrderStatusEvent statusEvent = new OrderStatusEvent(event.getOrderNumber(), "PENDING");
+        kafkaTemplate.send("order-status-topic", event.getOrderNumber(), statusEvent);
     }
 
     @Transactional
@@ -161,6 +229,9 @@ public class OrderService {
             order.setStatus("FAILED");
             orderRepository.save(order);
             log.warn("Order {} status updated to FAILED due to inventory issue.", order.getOrderNumber());
+            kafkaTemplate.send("order-status-topic", order.getOrderNumber(),
+                    new OrderStatusEvent(order.getOrderNumber(), order.getStatus()));
+
         } else {
             log.warn("Received failure event for order {} but status was not PENDING (Status: {}).",
                     order.getOrderNumber(), order.getStatus());
@@ -180,6 +251,8 @@ public class OrderService {
             order.setStatus("COMPLETED");
             orderRepository.save(order);
             log.info("Order {} status updated to COMPLETED.", order.getOrderNumber());
+            kafkaTemplate.send("order-status-topic", order.getOrderNumber(),
+                    new OrderStatusEvent(order.getOrderNumber(), order.getStatus()));
         } else {
             log.warn("Received payment success for order {} but status was not PENDING (Status: {}).",
                     order.getOrderNumber(), order.getStatus());
@@ -198,6 +271,8 @@ public class OrderService {
             order.setStatus("PAYMENT_FAILED");
             orderRepository.save(order);
             log.warn("Order {} status updated to PAYMENT_FAILED.", order.getOrderNumber());
+            kafkaTemplate.send("order-status-topic", order.getOrderNumber(),
+                    new OrderStatusEvent(order.getOrderNumber(), order.getStatus()));
         } else {
             log.warn("Received payment failure for order {} but status was not PENDING (Status: {}).",
                     order.getOrderNumber(), order.getStatus());
