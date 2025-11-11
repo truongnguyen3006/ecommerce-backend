@@ -125,8 +125,6 @@ public class OrderService {
             topics = {
                     "order-placed-topic",
                     "order-failed-topic",
-                    "payment-processed-topic",
-                    "payment-failed-topic"
             },
             containerFactory = "kafkaListenerContainerFactory" // <-- Dùng factory chung
     )
@@ -171,6 +169,32 @@ public class OrderService {
         }
     }
 
+    public <T> T toEvent(Object payload, Class<T> clazz) {
+        return objectMapper.convertValue(payload, clazz);
+    }
+
+
+    @KafkaListener(
+            topics = "payment-validated-topic",
+            groupId = "order-group",
+            containerFactory = "kafkaListenerContainerFactory"
+    )
+    public void handleValidatedPayment(List<ConsumerRecord<String, Object>> records) {
+        for (ConsumerRecord<String, Object> rec : records) {
+            try {
+                Object payload = rec.value(); // <-- LẤY GIÁ TRỊ
+                PaymentProcessedEvent event =
+                        objectMapper.convertValue(payload, PaymentProcessedEvent.class);
+                handlePaymentSuccess(event);
+            } catch (Exception e) {
+                log.error("❌ Error converting/processing PaymentValidatedEvent at {}: {}",
+                        rec.topic() + "-" + rec.partition() + "@" + rec.offset(), e.getMessage(), e);
+            }
+        }
+    }
+
+
+
 
 
     @Transactional
@@ -188,6 +212,9 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Async Save: Order {} saved to database.", event.getOrderNumber());
+        // Sau khi lưu order vào DB
+        OrderStatusEvent statusEvent = new OrderStatusEvent(event.getOrderNumber(), "PENDING");
+        kafkaTemplate.send("order-status-topic", event.getOrderNumber(), statusEvent);
     }
 
     @Transactional
@@ -202,6 +229,9 @@ public class OrderService {
             order.setStatus("FAILED");
             orderRepository.save(order);
             log.warn("Order {} status updated to FAILED due to inventory issue.", order.getOrderNumber());
+            kafkaTemplate.send("order-status-topic", order.getOrderNumber(),
+                    new OrderStatusEvent(order.getOrderNumber(), order.getStatus()));
+
         } else {
             log.warn("Received failure event for order {} but status was not PENDING (Status: {}).",
                     order.getOrderNumber(), order.getStatus());
@@ -221,6 +251,8 @@ public class OrderService {
             order.setStatus("COMPLETED");
             orderRepository.save(order);
             log.info("Order {} status updated to COMPLETED.", order.getOrderNumber());
+            kafkaTemplate.send("order-status-topic", order.getOrderNumber(),
+                    new OrderStatusEvent(order.getOrderNumber(), order.getStatus()));
         } else {
             log.warn("Received payment success for order {} but status was not PENDING (Status: {}).",
                     order.getOrderNumber(), order.getStatus());
@@ -239,6 +271,8 @@ public class OrderService {
             order.setStatus("PAYMENT_FAILED");
             orderRepository.save(order);
             log.warn("Order {} status updated to PAYMENT_FAILED.", order.getOrderNumber());
+            kafkaTemplate.send("order-status-topic", order.getOrderNumber(),
+                    new OrderStatusEvent(order.getOrderNumber(), order.getStatus()));
         } else {
             log.warn("Received payment failure for order {} but status was not PENDING (Status: {}).",
                     order.getOrderNumber(), order.getStatus());
