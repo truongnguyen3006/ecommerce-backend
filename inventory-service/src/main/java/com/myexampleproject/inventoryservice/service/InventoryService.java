@@ -7,32 +7,25 @@ import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 import io.confluent.kafka.streams.serdes.json.KafkaJsonSchemaSerde;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
-
-// ========================================================================
-// === IMPORT CHÍNH XÁC (SỬ DỤNG 100% API MỚI) ===
-// ========================================================================
 import org.apache.kafka.streams.processor.api.Processor;
 import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
-// === BỎ CÁC IMPORT CŨ (nếu còn): ===
-// BỎ: import org.apache.kafka.streams.processor.Processor;
-// BỎ: import org.apache.kafka.streams.processor.ProcessorContext;
-// BỎ: import org.apache.kafka.streams.processor.ProcessorSupplier;
-// ========================================================================
-
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.kafka.annotation.EnableKafkaStreams;
+import org.springframework.kafka.config.StreamsBuilderFactoryBean;
 
-import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 @Configuration
 @Slf4j
@@ -46,9 +39,7 @@ public class InventoryService {
 
     private <T> Serde<T> createJsonSchemaSerde(Class<T> dtoClass) {
         final Serde<T> serde = new KafkaJsonSchemaSerde<>(dtoClass);
-        Map<String, String> config =
-                Map.of(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
-        serde.configure(config, false);
+        serde.configure(Map.of(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl), false);
         return serde;
     }
 
@@ -56,120 +47,118 @@ public class InventoryService {
     @DependsOn("kafkaAdmin")
     public KStream<String, OrderValidatedEvent> inventoryTopology(StreamsBuilder builder) {
 
-        Serde<ProductCreatedEvent> productCreatedSerde =
-                createJsonSchemaSerde(ProductCreatedEvent.class);
-        Serde<OrderProcessingEvent> orderProcessingSerde =
-                createJsonSchemaSerde(OrderProcessingEvent.class);
-        Serde<OrderValidatedEvent> orderValidatedSerde =
-                createJsonSchemaSerde(OrderValidatedEvent.class);
-        Serde<OrderFailedEvent> orderFailedSerde =
-                createJsonSchemaSerde(OrderFailedEvent.class);
-        Serde<InventoryAdjustmentEvent> adjustmentSerde =
-                createJsonSchemaSerde(InventoryAdjustmentEvent.class);
+        Serde<ProductCreatedEvent> productCreatedSerde = createJsonSchemaSerde(ProductCreatedEvent.class);
+        Serde<OrderProcessingEvent> orderProcessingSerde = createJsonSchemaSerde(OrderProcessingEvent.class);
+        Serde<OrderValidatedEvent> orderValidatedSerde = createJsonSchemaSerde(OrderValidatedEvent.class);
+        Serde<OrderFailedEvent> orderFailedSerde = createJsonSchemaSerde(OrderFailedEvent.class);
+        Serde<InventoryAdjustmentEvent> adjustmentSerde = createJsonSchemaSerde(InventoryAdjustmentEvent.class);
 
-        // --- BƯỚC 1: ĐỊNH NGHĨA STATE STORE ---
-        StoreBuilder<KeyValueStore<String, Integer>> inventoryStoreBuilder =
-                Stores.keyValueStoreBuilder(
-                        Stores.persistentKeyValueStore(INVENTORY_STORE_NAME),
-                        Serdes.String(),
-                        Serdes.Integer()
-                );
+        // ===== 1️⃣ KHAI BÁO STATE STORE =====
+        StoreBuilder<KeyValueStore<String, Integer>> inventoryStoreBuilder = Stores.keyValueStoreBuilder(
+                Stores.persistentKeyValueStore(INVENTORY_STORE_NAME),
+                Serdes.String(),
+                Serdes.Integer()
+        );
         builder.addStateStore(inventoryStoreBuilder);
 
-
-        // --- BƯỚC 2: XỬ LÝ "product-created-topic" (Dùng API Mới) ---
-        KStream<String, ProductCreatedEvent> productCreationStream = builder.stream(
-                "product-created-topic",
-                Consumed.with(Serdes.String(), productCreatedSerde)
-        );
-
-        productCreationStream.process(
-                () -> new Processor<String, ProductCreatedEvent, Void, Void>() {
+        // ===== 2️⃣ KHỞI TẠO SẢN PHẨM MỚI =====
+        builder.stream("product-created-topic", Consumed.with(Serdes.String(), productCreatedSerde))
+                .process(() -> new Processor<String, ProductCreatedEvent, Void, Void>() {
 
                     private KeyValueStore<String, Integer> store;
-                    private ProcessorContext<Void, Void> context;
 
                     @Override
                     public void init(ProcessorContext<Void, Void> context) {
-                        this.context = context;
                         this.store = context.getStateStore(INVENTORY_STORE_NAME);
                     }
 
                     @Override
                     public void process(Record<String, ProductCreatedEvent> record) {
-                        String skuCode = record.key();
-                        if (skuCode == null) return;
+                        String sku = record.key();
+                        if (sku == null || record.value() == null) return;
 
-                        int initialQuantity = record.value().getInitialQuantity();
+                        int initialQty = record.value().getInitialQuantity();
+                        Integer old = store.get(sku);
 
-                        if (this.store.get(skuCode) == null) {
-                            this.store.put(skuCode, initialQuantity);
-                            log.info("[Streams] Initialized stock for {}: {}", skuCode, initialQuantity);
+                        if (old == null) {
+                            store.put(sku, initialQty);
+                            log.info("[INIT] SKU {} initialized with {} units", sku, initialQty);
                         } else {
-                            log.warn("[Streams] SKU {} already exists. Ignoring.", skuCode);
+                            log.info("[INIT] SKU {} already exists with {}, ignoring init {}", sku, old, initialQty);
                         }
                     }
+
                     @Override
                     public void close() {}
-                },
-                INVENTORY_STORE_NAME
-        );
+                }, INVENTORY_STORE_NAME);
 
-        // === LOGIC MỚI: XỬ LÝ TOPIC ĐIỀU CHỈNH (ADJUSTMENT) ===
-        // ==========================================================
-        KStream<String, InventoryAdjustmentEvent> adjustmentStream = builder.stream(
-                "inventory-adjustment-topic",
-                Consumed.with(Serdes.String(), adjustmentSerde)
-        );
+        // ===== 3️⃣ XỬ LÝ ĐIỀU CHỈNH THỦ CÔNG (ADJUSTMENT) =====
+        builder.stream("inventory-adjustment-topic", Consumed.with(Serdes.String(), adjustmentSerde))
+                .process(() -> new Processor<String, InventoryAdjustmentEvent, Void, Void>() {
 
-        adjustmentStream.process(
-                () -> new Processor<String, InventoryAdjustmentEvent, Void, Void>() {
                     private KeyValueStore<String, Integer> store;
-                    private ProcessorContext<Void, Void> context;
 
                     @Override
                     public void init(ProcessorContext<Void, Void> context) {
-                        this.context = context;
                         this.store = context.getStateStore(INVENTORY_STORE_NAME);
                     }
 
                     @Override
                     public void process(Record<String, InventoryAdjustmentEvent> record) {
-                        String skuCode = record.key();
+                        String sku = record.key();
                         InventoryAdjustmentEvent event = record.value();
-                        if (skuCode == null) return;
 
-                        // Lấy số lượng hiện tại
-                        Integer currentStock = store.get(skuCode);
-                        if (currentStock == null) {
-                            currentStock = 0; // Nếu chưa có, coi như là 0
+                        if (sku == null || event == null) return;
+
+                        Integer current = store.get(sku);
+                        if (current == null) current = 0;
+
+                        int delta = event.getAdjustmentQuantity();
+
+                        // Nếu delta = 0, không làm gì cả
+                        if (delta == 0) {
+                            log.warn("[ADJUST] SKU {} received adjustment of 0, ignoring.", sku);
+                            return;
                         }
 
-                        // Tính số lượng mới
-                        int newStock = currentStock + event.getAdjustmentQuantity();
+                        long newStockLong = (long) current + (long) delta;
+                        int newStock;
+                        if (newStockLong < 0) {
+                            // Giữ hành vi hiện tại: không để âm, đặt về 0 và log rõ
+                            log.warn("[ADJUST] SKU {} attempted to reduce below zero (current={}, adj={}), forcing newStock=0",
+                                    sku, current, delta);
+                            newStock = 0;
+                        } else if (newStockLong > Integer.MAX_VALUE) {
+                            // Phòng overflow hiếm, clamp
+                            newStock = Integer.MAX_VALUE;
+                            log.warn("[ADJUST] SKU {} newStock overflow, clamped to Integer.MAX_VALUE", sku);
+                        } else {
+                            newStock = (int) newStockLong;
+                        }
 
-                        // Cập nhật lại kho
-                        store.put(skuCode, newStock);
+                        // CHỈ CẬP NHẬT KHI GIÁ TRỊ THAY ĐỔI
+                        if (Objects.equals(current, newStock)) {
+                            log.debug("[ADJUST] SKU {} stock unchanged (current={}, new={}), skipping put.", sku, current, newStock);
+                            return;
+                        }
 
-                        log.info("[Streams][ADMIN] Adjusted stock for {}. Reason: {}. Old: {}, New: {}",
-                                skuCode, event.getReason(), currentStock, newStock);
+                        store.put(sku, newStock);
+
+                        log.info("[ADJUST] SKU {} adjusted by {} → old: {}, new: {}, reason: {}",
+                                sku, delta, current, newStock, event.getReason());
                     }
 
                     @Override
                     public void close() {}
-                },
-                INVENTORY_STORE_NAME // Vẫn dùng chung 1 State Store
-        );
+                }, INVENTORY_STORE_NAME);
 
-        // --- BƯỚC 3: XỬ LÝ "order-processing-topic" (Dùng API Mới) ---
-        KStream<String, OrderProcessingEvent> orderProcessingStream = builder.stream(
-                "order-processing-topic",
-                Consumed.with(Serdes.String(), orderProcessingSerde)
-        );
 
-        KStream<String, Object> validationResultStream = orderProcessingStream.process(
+        // ===== 4️⃣ XỬ LÝ ĐƠN HÀNG (ORDER PROCESSING) =====
+        KStream<String, OrderProcessingEvent> orderStream = builder.stream(
+                "order-processing-topic", Consumed.with(Serdes.String(), orderProcessingSerde));
+
+        KStream<String, Object> resultStream = orderStream.process(
                 () -> new Processor<String, OrderProcessingEvent, String, Object>() {
-
                     private KeyValueStore<String, Integer> store;
                     private ProcessorContext<String, Object> context;
 
@@ -181,62 +170,106 @@ public class InventoryService {
 
                     @Override
                     public void process(Record<String, OrderProcessingEvent> record) {
-                        String skuCode = record.key();
-                        OrderProcessingEvent orderEvent = record.value();
+                        OrderProcessingEvent event = record.value();
+                        if (event == null) return;
 
-                        if (orderEvent == null || orderEvent.getOrderLineItemsDtoList() == null || orderEvent.getOrderLineItemsDtoList().isEmpty()) {
-                            log.warn("[Streams] Received empty order event for SKU {}. Skipping.", skuCode);
+                        String orderNumber = event.getOrderNumber();
+
+                        if (event.getOrderLineItemsDtoList() == null || event.getOrderLineItemsDtoList().isEmpty()) {
+                            log.warn("[ORDER] Received empty/invalid order {}. Ignoring.", orderNumber);
                             return;
                         }
 
-                        OrderLineItemsDto item = orderEvent.getOrderLineItemsDtoList().get(0);
-                        int requestedQuantity = item.getQuantity();
-                        String orderNumber = orderEvent.getOrderNumber();
-                        Integer currentStock = store.get(skuCode);
+                        // ===== PHASE 1: KIỂM TRA TỒN KHO (ALL OR NOTHING) =====
+                        boolean allItemsSufficient = true;
+                        String failureReason = null;
 
-                        Object resultEvent;
+                        for (OrderLineItemsDto item : event.getOrderLineItemsDtoList()) {
+                            String sku = item.getSkuCode();
+                            int requested = item.getQuantity();
+                            if (requested <= 0) continue; // Bỏ qua nếu số lượng không hợp lệ
 
-                        if (currentStock == null) {
-                            log.warn("[Streams] FAILED: SKU {} not found for Order {}.", skuCode, orderNumber);
-                            resultEvent = new OrderFailedEvent(orderNumber, "SKU " + skuCode + " not found.");
+                            Integer stock = store.get(sku);
+                            if (stock == null) stock = 0;
 
-                        } else if (currentStock >= requestedQuantity) {
-                            store.put(skuCode, currentStock - requestedQuantity);
-                            log.info("[Streams] SUCCESS: Stock reduced for {}. Order {}. New stock: {}",
-                                    skuCode, orderNumber, currentStock - requestedQuantity);
-                            resultEvent = new OrderValidatedEvent(orderNumber);
-
-                        } else {
-                            log.warn("[Streams] FAILED: Not enough stock for {}. Order {}. Requested: {}, Stock: {}",
-                                    skuCode, orderNumber, requestedQuantity, currentStock);
-                            resultEvent = new OrderFailedEvent(orderNumber, "Not enough stock for " + skuCode);
+                            if (stock < requested) {
+                                log.warn("[ORDER] CHECK FAILED for Order {}. SKU {} insufficient stock: have {}, need {}.",
+                                        orderNumber, sku, stock, requested);
+                                allItemsSufficient = false;
+                                failureReason = "Not enough stock for " + sku;
+                                break; // Dừng ngay khi phát hiện 1 sản phẩm không đủ
+                            }
                         }
 
-                        // Gửi kết quả (thành công hoặc thất bại) ra luồng tiếp theo
-                        context.forward(record.withValue(resultEvent));
+                        // ===== PHASE 2: COMMIT HOẶC ROLLBACK =====
+                        Object result;
+                        if (allItemsSufficient) {
+                            // --- COMMIT: Tất cả đều đủ, tiến hành trừ kho ---
+                            log.info("[ORDER] CHECK OK for Order {}. Committing stock adjustments.", orderNumber);
+
+                            for (OrderLineItemsDto item : event.getOrderLineItemsDtoList()) {
+                                String sku = item.getSkuCode();
+                                int requested = item.getQuantity();
+                                if (requested <= 0) continue;
+
+                                Integer stock = store.get(sku);
+                                if (stock == null) stock = 0;
+
+                                long newStockLong = (long) stock - (long) requested;
+                                int newStock = newStockLong < 0 ? 0 : (int) newStockLong; // safety clamp
+                                store.put(sku, newStock);
+                                log.info("[ORDER] COMMIT: Order {}. SKU {} ordered {} → {} left.",
+                                        orderNumber, sku, requested, newStock);
+                            }
+                            result = new OrderValidatedEvent(orderNumber);
+
+                        } else {
+                            // --- ROLLBACK: Không đủ hàng, gửi sự kiện Fail ---
+                            log.warn("[ORDER] FINAL FAIL for Order {}. Reason: {}", orderNumber, failureReason);
+                            result = new OrderFailedEvent(orderNumber, failureReason);
+                        }
+
+                        // Gửi kết quả (Thành công hoặc Thất bại)
+                        context.forward(record.withValue(result));
                     }
 
                     @Override
                     public void close() {}
-                },
-                INVENTORY_STORE_NAME
-        );
+                }, INVENTORY_STORE_NAME);
 
-        // --- BƯỚC 4: CHIA TÁCH VÀ GỬI KẾT QUẢ ---
-        Map<String, KStream<String, Object>> branchedStreams = validationResultStream
-                .split(Named.as("validation-branch-"))
-                .branch((key, value) -> value instanceof OrderValidatedEvent, Branched.as("success"))
-                .branch((key, value) -> value instanceof OrderFailedEvent, Branched.as("failed"))
+        // ===== 5️⃣ CHIA NHÁNH KẾT QUẢ =====
+        Map<String, KStream<String, Object>> branches = resultStream.split(Named.as("validation-"))
+                .branch((k, v) -> v instanceof OrderValidatedEvent, Branched.as("success"))
+                .branch((k, v) -> v instanceof OrderFailedEvent, Branched.as("fail"))
                 .noDefaultBranch();
 
-        branchedStreams.get("validation-branch-success")
-                .mapValues(value -> (OrderValidatedEvent) value)
+        branches.get("validation-success")
+                .mapValues(v -> (OrderValidatedEvent) v)
                 .to("order-validated-topic", Produced.with(Serdes.String(), orderValidatedSerde));
 
-        branchedStreams.get("validation-branch-failed")
-                .mapValues(value -> (OrderFailedEvent) value)
+        branches.get("validation-fail")
+                .mapValues(v -> (OrderFailedEvent) v)
                 .to("order-failed-topic", Produced.with(Serdes.String(), orderFailedSerde));
 
+        // Note: giữ nguyên return null như cũ để không thay đổi behavior bean (nếu project đang dùng)
         return null;
+    }
+
+    @Autowired
+    private StreamsBuilderFactoryBean factoryBean;
+
+    /**
+     * ✅ Trả về instance KafkaStreams hiện tại để controller có thể truy vấn state store.
+     */
+    public KafkaStreams getKafkaStreams() {
+        if (factoryBean == null) {
+            return null;
+        }
+        try {
+            return factoryBean.getKafkaStreams();
+        } catch (Exception e) {
+            log.warn("Kafka Streams chưa sẵn sàng: {}", e.getMessage());
+            return null;
+        }
     }
 }

@@ -1,4 +1,5 @@
 0
-2
+3
 product-created-topic 1 0
-order-processing-topic 1 13017
+inventory-adjustment-topic 1 2
+order-processing-topic 1 111640
