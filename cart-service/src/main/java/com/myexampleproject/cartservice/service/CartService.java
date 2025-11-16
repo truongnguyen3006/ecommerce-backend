@@ -8,12 +8,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional; // <-- Giữ import này cho listener
 import org.springframework.kafka.annotation.KafkaListener; // <-- Thêm import này
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,6 +33,49 @@ public class CartService {
     private static final Duration REDIS_TTL = Duration.ofHours(24);
     private static final String CHECKOUT_TOPIC = "cart-checkout-topic";
     private static final String CART_CLEANER_GROUP_ID = "cart-cleaner-group";
+
+    public CompletableFuture<Void> checkoutAsync(String userId) {
+        return CompletableFuture.runAsync(() -> {
+            CartEntity cart = this.viewCart(userId);
+
+            if (cart == null || cart.getItems().isEmpty()) {
+                // Ném lỗi để .exceptionally() trong Controller bắt được
+                throw new IllegalStateException("Cart empty");
+            }
+
+            List<CartLineItem> items = cart.getItems().stream()
+                    .map(i -> new CartLineItem(i.getSkuCode(), i.getQuantity(), i.getPrice()))
+                    .collect(Collectors.toList());
+
+            CartCheckoutEvent event = new CartCheckoutEvent(userId, items);
+
+            // Gọi hàm gửi Kafka (đã được đánh dấu @Async)
+            sendKafkaEvent(event);
+
+            // Hàm này trả về ngay, không chờ Kafka
+        });
+    }
+
+    @Async // <-- QUAN TRỌNG
+    public void sendKafkaEvent(CartCheckoutEvent event) {
+        String userId = event.getUserId();
+        try {
+            log.info("ASYNC SEND: Gửi checkout event cho user {}", userId);
+
+            // Lệnh này BÂY GIỜ sẽ block một luồng "Async"
+            // mà không ảnh hưởng đến luồng HTTP
+            kafkaTemplate.send(CHECKOUT_TOPIC, userId, event).whenComplete((md, ex) -> {
+                if (ex != null) {
+                    log.error("ASYNC SEND FAILED for user {}: {}", userId, ex.getMessage());
+                } else {
+                    log.info("ASYNC SEND SUCCESS for user {}", userId);
+                }
+            });
+
+        } catch (Exception e) {
+            log.error("Lỗi khi gửi Kafka bất đồng bộ: {}", e.getMessage(), e);
+        }
+    }
 
     /**
      * Hàm helper: Đọc từ Cache (Redis) trước, nếu không có thì đọc từ DB.

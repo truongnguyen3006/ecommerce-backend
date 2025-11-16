@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController
 @RequestMapping("/api/cart")
 @RequiredArgsConstructor
@@ -32,9 +34,23 @@ public class CartController {
         return ResponseEntity.ok(cart);
     }
 
+//    @PostMapping("/checkout/{userId}")
+//    public ResponseEntity<?> checkout(@PathVariable String userId) {
+//        cartService.checkout(userId);
+//        return ResponseEntity.accepted().body("Checkout queued");
+//    }
+
     @PostMapping("/checkout/{userId}")
-    public ResponseEntity<?> checkout(@PathVariable String userId) {
-        cartService.checkout(userId);
-        return ResponseEntity.accepted().body("Checkout queued");
+    public CompletableFuture<ResponseEntity<String>> checkout(@PathVariable String userId) {
+
+        return cartService.checkoutAsync(userId)
+                .thenApply(result -> {
+                    // Trả về 202 Accepted (kiểu ResponseEntity<String>)
+                    return ResponseEntity.accepted().body("Checkout queued");
+                })
+                .exceptionally(ex -> {
+                    // Bắt lỗi (kiểu ResponseEntity<String>)
+                    return ResponseEntity.badRequest().body(ex.getMessage());
+                });
     }
 }
