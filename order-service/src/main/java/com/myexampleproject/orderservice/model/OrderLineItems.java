@@ -24,6 +24,8 @@ public class OrderLineItems {
 	private BigDecimal price;
 	private Integer quantity;
 
+    private String productName;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id")
     private Order order;

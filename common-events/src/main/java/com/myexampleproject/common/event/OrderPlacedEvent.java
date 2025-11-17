@@ -1,5 +1,6 @@
 package com.myexampleproject.common.event;
 
+import com.myexampleproject.common.dto.OrderLineItemRequest;
 import com.myexampleproject.common.dto.OrderLineItemsDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -12,6 +13,7 @@ import java.util.List;
 @NoArgsConstructor
 public class OrderPlacedEvent {
     private String orderNumber;
-    private List<OrderLineItemsDto> orderLineItemsDtoList;
+    private String userId;
+    private List<OrderLineItemRequest> orderLineItemsDtoList;
 }
 
