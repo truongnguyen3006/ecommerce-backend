@@ -19,6 +19,8 @@ import com.myexampleproject.orderservice.service.OrderService;
 
 import lombok.RequiredArgsConstructor;
 
+import java.security.Principal;
+
 @RestController
 @RequestMapping("/api/order")
 @RequiredArgsConstructor
@@ -30,9 +32,12 @@ public class OrderController {
     // --- PHƯƠNG THỨC POST (Bạn đã có) ---
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public String placeOrder(@RequestBody OrderRequest orderRequest) {
+    public String placeOrder(@RequestBody OrderRequest orderRequest, Principal principal) {
         log.info("Placing Order (Event-Driven Mode)");
-        orderService.placeOrder(orderRequest);
+        // LẤY userId TỪ PRINCIPAL
+        // principal.getName() sẽ trả về "subject" (ID) của user trong Keycloak
+        String userId = principal.getName();
+        orderService.placeOrder(orderRequest, userId);
         return "Order Received! Your order is being processed.";
     }
 

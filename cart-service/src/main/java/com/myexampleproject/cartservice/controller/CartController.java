@@ -1,5 +1,6 @@
 package com.myexampleproject.cartservice.controller;
 
+import com.myexampleproject.common.dto.CartItemRequest;
 import com.myexampleproject.common.event.CartLineItem;
 import com.myexampleproject.cartservice.model.CartEntity;
 import com.myexampleproject.cartservice.service.CartService;
@@ -17,15 +18,15 @@ public class CartController {
     private final CartService cartService;
 
     @PostMapping("/add/{userId}")
-    public ResponseEntity<?> addToCart(@PathVariable String userId, @RequestBody CartLineItem item) {
-        CartEntity cart = cartService.addItem(userId, item);
-        return ResponseEntity.ok(cart);
+    public ResponseEntity<?> addToCart(@PathVariable String userId, @RequestBody CartItemRequest item) {
+        cartService.addItem(userId, item); // Sửa: Không gán vào biến
+        return ResponseEntity.ok().build(); // Sửa: Trả về 200 OK rỗng
     }
 
     @PostMapping("/remove/{userId}/{sku}")
-    public ResponseEntity<?> remove(@PathVariable String userId, @PathVariable String sku) {
-        CartEntity cart = cartService.removeItem(userId, sku);
-        return ResponseEntity.ok(cart);
+    public ResponseEntity<?> remove(@PathVariable String userId, @PathVariable String sku) { // Sửa 1: Đổi void -> ResponseEntity<?>
+        cartService.removeItem(userId, sku); // Sửa 2: Không gán vào biến
+        return ResponseEntity.ok().build(); // Sửa 3: Trả về 200 OK rỗng
     }
 
     @GetMapping("/view/{userId}")

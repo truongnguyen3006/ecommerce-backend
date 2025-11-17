@@ -3,6 +3,8 @@ package com.myexampleproject.cartservice.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(name = "cart_items")
 @Getter
@@ -17,5 +19,9 @@ public class CartItemEntity {
 
     private String skuCode;
     private int quantity;
-    private double price;
+
+    private String productName;
+    private String imageUrl;
+
+    private BigDecimal price;
 }

@@ -17,7 +17,7 @@ public class CartEntity {
     @Id
     private String userId; // userId làm PK
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "cart_user_id")
     private List<CartItemEntity> items = new ArrayList<>();
 

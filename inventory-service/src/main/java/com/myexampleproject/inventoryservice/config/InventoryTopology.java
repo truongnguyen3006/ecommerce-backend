@@ -1,5 +1,6 @@
 package com.myexampleproject.inventoryservice.config;
 
+import com.myexampleproject.common.dto.OrderLineItemRequest;
 import com.myexampleproject.common.dto.OrderLineItemsDto;
 import com.myexampleproject.common.event.*;
 import lombok.RequiredArgsConstructor;
@@ -71,14 +72,14 @@ public class InventoryTopology {
 
         // ==========================================================
         // BUILDER B: Xử lý Đơn hàng (SAGA)
-        // (SỬA LỖI ClassCastException TẠI ĐÂY)
+        // (SỬA LẠI CHO ĐÚNG)
         // ==========================================================
 
         builder.stream("inventory-check-request-topic", Consumed.with(stringSerde, checkRequestSerde))
                 .transform(
                         () -> new Transformer<String, InventoryCheckRequest, KeyValue<String, InventoryCheckResult>>() {
 
-                            // SỬA LỖI 1: Store phải là <String, ValueAndTimestamp<Integer>>
+                            // SỬA 1: Store phải là <String, ValueAndTimestamp<Integer>>
                             private KeyValueStore<String, ValueAndTimestamp<Integer>> store;
                             private ProcessorContext context;
 
@@ -91,15 +92,15 @@ public class InventoryTopology {
 
                             @Override
                             public KeyValue<String, InventoryCheckResult> transform(String skuCode, InventoryCheckRequest request) {
-                                OrderLineItemsDto item = request.getItem();
+                                // SỬA 2: Đổi kiểu 'item' về đúng DTO (không có 'id')
+                                OrderLineItemRequest item = request.getItem();
                                 String orderNumber = request.getOrderNumber();
                                 String reason = null;
                                 boolean success = false;
 
-                                // SỬA LỖI 2: Đọc 'Value' từ 'ValueAndTimestamp'
+                                // SỬA 3: Đọc 'Value' từ 'ValueAndTimestamp'
                                 ValueAndTimestamp<Integer> stockWithTimestamp = store.get(skuCode);
                                 Integer currentStock = (stockWithTimestamp != null) ? stockWithTimestamp.value() : 0;
-                                // (Thêm 1 lần check null an toàn)
                                 if (currentStock == null) currentStock = 0;
 
 
@@ -112,7 +113,7 @@ public class InventoryTopology {
                                     // Thành công -> TRỪ KHO NGAY
                                     int newStock = currentStock - item.getQuantity();
 
-                                    // SỬA LỖI 3: Ghi lại (put) cũng phải dùng ValueAndTimestamp
+                                    // SỬA 4: Ghi lại (put) cũng phải dùng ValueAndTimestamp
                                     store.put(skuCode, ValueAndTimestamp.make(newStock, context.timestamp()));
 
                                     log.info("INVENTORY COMMIT (SAGA) → {} ({} → {})", skuCode, currentStock, newStock);
@@ -122,6 +123,7 @@ public class InventoryTopology {
                                 // Gửi kết quả (key=orderNumber)
                                 return KeyValue.pair(
                                         orderNumber,
+                                        // SỬA 5: Dùng 'item' (kiểu OrderLineItemRequest)
                                         new InventoryCheckResult(orderNumber, item, success, reason)
                                 );
                             }
@@ -132,7 +134,6 @@ public class InventoryTopology {
                         INVENTORY_STORE
                 )
                 .to("inventory-check-result-topic", Produced.with(stringSerde, checkResultSerde));
-
 
         log.info("=== INVENTORY TOPOLOGY (SAGA - Repartitioned - TS Fixed) LOADED OK ===");
     }

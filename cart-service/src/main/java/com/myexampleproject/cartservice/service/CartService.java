@@ -1,11 +1,14 @@
 package com.myexampleproject.cartservice.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myexampleproject.common.dto.CartItemRequest;
 import com.myexampleproject.common.event.*;
 import com.myexampleproject.cartservice.model.CartEntity;
 import com.myexampleproject.cartservice.model.CartItemEntity;
 import com.myexampleproject.cartservice.repository.CartRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional; // <-- Giữ import này cho listener
 import org.springframework.kafka.annotation.KafkaListener; // <-- Thêm import này
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -30,9 +34,35 @@ public class CartService {
     private final KafkaTemplate<String, CartCheckoutEvent> kafkaTemplate;
 
     private static final String REDIS_CART_PREFIX = "cart:";
+    private static final String REDIS_QTY_HASH_PREFIX = "cart:qty:";   // MỚI: Hash chứa số lượng
+    private static final String REDIS_DATA_HASH_PREFIX = "cart:data:"; // MỚI: Hash chứa thông tin (tên, giá)
     private static final Duration REDIS_TTL = Duration.ofHours(24);
     private static final String CHECKOUT_TOPIC = "cart-checkout-topic";
     private static final String CART_CLEANER_GROUP_ID = "cart-cleaner-group";
+    private final ObjectMapper objectMapper; // 1. Inject ObjectMapper
+    private static final String PRODUCT_CACHE_KEY = "products:cache"; // 2. Key cache giống OrderService
+
+    // THÊM HÀM MỚI: Listener để xây dựng Product Cache
+    // ==========================================================
+    @KafkaListener(topics = "product-cache-update-topic", groupId = "cart-product-cacher")
+    // SỬA 1: Quay lại dùng List<ConsumerRecord<String, Object>>
+    public void handleProductCacheUpdate(List<ConsumerRecord<String, Object>> records) {
+        log.info("Receiving {} product cache updates for CartService...", records.size());
+
+        for (ConsumerRecord<String, Object> record : records) {
+            try {
+                // SỬA 2: Dùng ObjectMapper để convert từ LinkedHashMap
+                ProductCacheEvent event = objectMapper.convertValue(record.value(), ProductCacheEvent.class);
+                String sku = event.getSkuCode();
+
+                redisTemplate.opsForHash().put(PRODUCT_CACHE_KEY, sku, event);
+                log.debug("CartService cached product info for SKU: {}", sku);
+
+            } catch (Exception e) {
+                log.error("CART-CACHE: LỖI KHI CACHING PRODUCT {}: {}", record.key(), e.getMessage());
+            }
+        }
+    }
 
     public CompletableFuture<Void> checkoutAsync(String userId) {
         return CompletableFuture.runAsync(() -> {
@@ -76,114 +106,109 @@ public class CartService {
             log.error("Lỗi khi gửi Kafka bất đồng bộ: {}", e.getMessage(), e);
         }
     }
-
-    /**
-     * Hàm helper: Đọc từ Cache (Redis) trước, nếu không có thì đọc từ DB.
-     * (Hàm này giữ nguyên logic, nó đã tối ưu cho việc đọc)
-     */
-    public CartEntity getCartFromCacheOrDb(String userId) {
-        String key = REDIS_CART_PREFIX + userId;
-        Object cached = redisTemplate.opsForValue().get(key);
-        if (cached instanceof CartEntity) {
-            // log.debug("CACHE HIT for user {}", userId);
-            return (CartEntity) cached;
-        }
-
-        // log.debug("CACHE MISS for user {}", userId);
-        Optional<CartEntity> db = cartRepository.findById(userId);
-        if (db.isPresent()) {
-            // log.debug("DB HIT for user {}", userId);
-            CartEntity cartFromDb = db.get();
-            redisTemplate.opsForValue().set(key, cartFromDb, REDIS_TTL); // Warm up cache
-            return cartFromDb;
-        }
-
-        // log.debug("NEW CART for user {}", userId);
-        // Trả về Cart mới (rỗng) nếu không có ở đâu cả
-        return CartEntity.builder().userId(userId).items(new ArrayList<>()).build();
-    }
-
-//    * HÀM MỚI: Chỉ đọc từ Redis.
-//            * Nhanh, an toàn, không bao giờ tấn công CSDL.
-//     */
-    private CartEntity getCartFromRedis(String userId) {
-        String key = REDIS_CART_PREFIX + userId;
-        Object cached = redisTemplate.opsForValue().get(key);
-        if (cached instanceof CartEntity) {
-            return (CartEntity) cached;
-        }
-        return null; // Không có trong cache
-    }
-
+    
+    
     // ==========================================================
     // CẢI THIỆN HIỆU NĂNG: Sửa hàm addItem (Redis-only)
     // ==========================================================
 
-    // 1. XÓA @Transactional
-    public CartEntity addItem(String userId, CartLineItem line) {
-        // 1. Chỉ đọc từ REDIS (Không bao giờ đọc từ DB)
-        CartEntity cart = getCartFromRedis(userId);
-        // 2. Nếu không có, tạo mới
-        if (cart == null) {
-            cart = CartEntity.builder().userId(userId).items(new ArrayList<>()).build();
+    /**
+     * SỬA LẠI HOÀN TOÀN: Dùng HINCRBY để thêm item (Atomic)
+     */
+    public void addItem(String userId, CartItemRequest line) {
+        // 1. Tra cứu giá (giữ nguyên)
+        ProductCacheEvent productInfo = getProductFromCache(line.getSkuCode());
+        if (productInfo == null) {
+            throw new RuntimeException("Product not found: " + line.getSkuCode());
         }
 
-        // (Logic nghiệp vụ giữ nguyên)
-        Optional<CartItemEntity> exists = cart.getItems().stream()
-                .filter(i -> i.getSkuCode().equals(line.getSkuCode()))
-                .findFirst();
+        String qtyKey = REDIS_QTY_HASH_PREFIX + userId;
+        String dataKey = REDIS_DATA_HASH_PREFIX + userId;
+        String sku = line.getSkuCode();
+        Long qty = (long) line.getQuantity(); // HINCRBY dùng Long
 
-        if (exists.isPresent()) {
-            // ... (cập nhật quantity/price)
-            CartItemEntity e = exists.get();
-            e.setQuantity(e.getQuantity() + line.getQuantity());
-            e.setPrice(line.getPrice());
-        } else {
-            // ... (thêm item mới)
-            CartItemEntity item = CartItemEntity.builder()
-                    .skuCode(line.getSkuCode())
-                    .quantity(line.getQuantity())
-                    .price(line.getPrice())
-                    .build();
-            cart.getItems().add(item);
+        // 2. LỆNH NGUYÊN TỬ (ATOMIC)
+        // Tăng số lượng trong hash "cart:qty:{userId}"
+        redisTemplate.opsForHash().increment(qtyKey, sku, qty);
+
+        // 3. Cập nhật snapshot (Tên, Giá, Ảnh) vào hash "cart:data:{userId}"
+        // (Chúng ta lưu cả object ProductCacheEvent làm value)
+        redisTemplate.opsForHash().put(dataKey, sku, productInfo);
+
+        // 4. Đặt thời gian hết hạn (TTL) cho cả 2 key
+        redisTemplate.expire(qtyKey, REDIS_TTL);
+        redisTemplate.expire(dataKey, REDIS_TTL);
+    }
+
+    // THÊM HÀM HELPER MỚI:
+    private ProductCacheEvent getProductFromCache(String skuCode) {
+        try {
+            Object cachedData = redisTemplate.opsForHash().get(PRODUCT_CACHE_KEY, skuCode);
+            if (cachedData == null) return null;
+            return objectMapper.convertValue(cachedData, ProductCacheEvent.class);
+        } catch (Exception e) {
+            log.error("Lỗi khi đọc Product cache: {}", e.getMessage());
+            return null;
         }
-
-        // 3. XÓA BỎ VIỆC GHI VÀO CSDL (MySQL)
-        // CartEntity saved = cartRepository.save(cart); // <-- XÓA DÒNG NÀY
-
-        // 4. GHI TRỰC TIẾP VÀO REDIS (rất nhanh)
-        redisTemplate.opsForValue().set(REDIS_CART_PREFIX + userId, cart, REDIS_TTL);
-        return cart;
     }
 
     // ==========================================================
-    // CẢI THIỆN HIỆU NĂNG: Sửa hàm removeItem (Redis-only)
-    // ==========================================================
+    /**
+     * SỬA LẠI HOÀN TOÀN: Dùng HDEL để xóa item (Atomic)
+     */
+    public void removeItem(String userId, String sku) {
+        String qtyKey = REDIS_QTY_HASH_PREFIX + userId;
+        String dataKey = REDIS_DATA_HASH_PREFIX + userId;
 
-    // 1. XÓA @Transactional
-    public CartEntity removeItem(String userId, String sku) {
-        // 1. Chỉ đọc từ REDIS
-        CartEntity cart = getCartFromRedis(userId);
-        if (cart == null) return null; // Không có gì để xóa
-
-        // 2. Xử lý logic xóa
-        boolean removed = cart.getItems().removeIf(i -> i.getSkuCode().equals(sku));
-
-        if (removed) {
-            // 4. XÓA BỎ VIỆC GHI VÀO CSDL (MySQL)
-            // CartEntity saved = cartRepository.save(cart); // <-- XÓA DÒNG NÀY
-
-            // 5. GHI TRỰC TIẾP VÀO REDIS
-            redisTemplate.opsForValue().set(REDIS_CART_PREFIX + userId, cart, REDIS_TTL);
-        }
-        return cart;
+        // Xóa field (sku) khỏi cả 2 hash
+        redisTemplate.opsForHash().delete(qtyKey, sku);
+        redisTemplate.opsForHash().delete(dataKey, sku);
     }
 
     /**
      * Hàm xem giỏ hàng (giữ nguyên)
      */
+    /**
+     * SỬA LẠI HOÀN TOÀN: Tái tạo CartEntity từ 2 Hash
+     */
     public CartEntity viewCart(String userId) {
-        return getCartFromCacheOrDb(userId);
+        String qtyKey = REDIS_QTY_HASH_PREFIX + userId;
+        String dataKey = REDIS_DATA_HASH_PREFIX + userId;
+
+        // 1. Đọc cả 2 hash
+        Map<Object, Object> qtyMap = redisTemplate.opsForHash().entries(qtyKey);
+        Map<Object, Object> dataMap = redisTemplate.opsForHash().entries(dataKey);
+
+        if (qtyMap.isEmpty()) {
+            return CartEntity.builder().userId(userId).items(new ArrayList<>()).build();
+        }
+
+        List<CartItemEntity> items = new ArrayList<>();
+
+        // 2. Tái tạo lại danh sách items
+        for (Map.Entry<Object, Object> entry : qtyMap.entrySet()) {
+            String sku = (String) entry.getKey();
+            Integer quantity = ((Number) entry.getValue()).intValue(); // HINCRBY trả về Long, cast an toàn
+
+            Object data = dataMap.get(sku);
+            ProductCacheEvent productInfo = null;
+            if (data != null) {
+                // Convert (LinkedHashMap) -> ProductCacheEvent
+                productInfo = objectMapper.convertValue(data, ProductCacheEvent.class);
+            }
+
+            CartItemEntity item = CartItemEntity.builder()
+                    .skuCode(sku)
+                    .quantity(quantity)
+                    .productName(productInfo != null ? productInfo.getName() : "Sản phẩm không rõ")
+                    .price(productInfo != null ? productInfo.getPrice() : BigDecimal.ZERO)
+                    .imageUrl(productInfo != null ? productInfo.getImageUrl() : null) // Giả sử ProductCacheEvent có imageUrl
+                    .build();
+            items.add(item);
+        }
+
+        return CartEntity.builder().userId(userId).items(items).build();
+        // Lưu ý: 'version' và 'id' của item sẽ là null, điều này OK
     }
 
     // ==========================================================
@@ -220,19 +245,39 @@ public class CartService {
      * Kafka Listener: Dọn dẹp CSDL và Redis bất đồng bộ.
      * (Hàm này giữ nguyên như chúng ta đã sửa trước đó)
      */
-    @KafkaListener(topics = CHECKOUT_TOPIC, groupId = CART_CLEANER_GROUP_ID)
-    @Transactional
-    public void handleCheckoutCleanup(CartCheckoutEvent event) {
-        String userId = event.getUserId();
-        log.info("CLEANUP: Bắt đầu dọn dẹp giỏ hàng cho user {}", userId);
+    // --- SỬA LẠI HÀM CLEANUP ---
+    // Trong file CartService.java
 
-        try {
-            cartRepository.deleteById(userId);
-            redisTemplate.delete(REDIS_CART_PREFIX + userId);
-            log.info("CLEANUP: Đã dọn dẹp giỏ hàng (DB & Redis) cho user {}", userId);
-        } catch (Exception e) {
-            log.error("CLEANUP FAILED: Lỗi khi dọn dẹp giỏ hàng cho user {}: {}", userId, e.getMessage(), e);
-            throw e;
+    @KafkaListener(
+            topics = CHECKOUT_TOPIC,
+            groupId = CART_CLEANER_GROUP_ID,
+            containerFactory = "kafkaListenerContainerFactory" // <-- THÊM DÒNG NÀY
+    )
+    @Transactional
+    // SỬA 1: Đổi chữ ký từ List<Object> -> List<ConsumerRecord<String, Object>>
+    public void handleCheckoutCleanup(List<ConsumerRecord<String, Object>> records) {
+        log.info("CLEANUP: Bắt đầu dọn dẹp {} giỏ hàng", records.size());
+
+        // SỬA 2: Lặp qua ConsumerRecord
+        for (ConsumerRecord<String, Object> record : records) {
+            try {
+                // SỬA 3: PHẢI DÙNG record.value()
+                CartCheckoutEvent event = objectMapper.convertValue(record.value(), CartCheckoutEvent.class);
+
+                String userId = event.getUserId();
+                log.info("CLEANUP: Dọn dẹp giỏ hàng cho user {}", userId);
+
+                // ... (Logic dọn dẹp của bạn giữ nguyên) ...
+                cartRepository.deleteById(userId);
+                String qtyKey = REDIS_QTY_HASH_PREFIX + userId;
+                String dataKey = REDIS_DATA_HASH_PREFIX + userId;
+                redisTemplate.delete(List.of(qtyKey, dataKey)); // (Xóa 2 key hash)
+
+                log.info("CLEANUP: Đã dọn dẹp (DB & 2 Hashes) cho user {}", userId);
+
+            } catch (Exception e) {
+                log.error("CLEANUP FAILED: Lỗi khi dọn dẹp giỏ hàng (record key {}): {}", record.key(), e.getMessage(), e);
+            }
         }
     }
 }

@@ -38,6 +38,8 @@ public class ProductService {
 				.description(productRequest.getDescription())
 				.price(productRequest.getPrice())
                 .skuCode(productRequest.getSkuCode())
+                .category(productRequest.getCategory())
+                .imageUrl(productRequest.getImageUrl())
 				.build();
         Product savedProduct = productRepository.save(product);
         log.info("Product {} saved locally.", savedProduct.getId());
@@ -52,6 +54,17 @@ public class ProductService {
         kafkaTemplate.send("product-created-topic", event.getSkuCode(), event);
 
         log.info("ProductCreatedEvent sent for skuCode: {}", event.getSkuCode());
+
+        // --- SỬA: GỬI SỰ KIỆN CHO CACHE ---
+        ProductCacheEvent cacheEvent = ProductCacheEvent.builder()
+                .skuCode(savedProduct.getSkuCode())
+                .name(savedProduct.getName())
+                .price(savedProduct.getPrice())
+                .imageUrl(savedProduct.getImageUrl())
+                .build();
+        // Gửi vào một topic khác
+        kafkaTemplate.send("product-cache-update-topic", cacheEvent.getSkuCode(), cacheEvent);
+        log.info("ProductCacheEvent sent for skuCode: {}", cacheEvent.getSkuCode());
 
         // 3. Trả về Response
 		return mapToProductResponse(savedProduct);
