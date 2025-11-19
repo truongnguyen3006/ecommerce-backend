@@ -20,6 +20,7 @@ public class SecurityConfig {
 
                 // 2. Yêu cầu TẤT CẢ request phải được xác thực
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/actuator/**").permitAll()
                         .anyRequest().authenticated() // <-- BẮT BUỘC TẤT CẢ
                 )
 

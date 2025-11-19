@@ -38,4 +38,16 @@ public class NotificationService {
     public void handlePaymentFailed(@Payload PaymentFailedEvent event) {
         log.warn("Payment failed for order {}: {}", event.getOrderNumber(), event.getReason());
     }
+
+    // --- THÊM HÀM MỚI ---
+    @KafkaListener(
+            topics = "order-failed-topic", // <-- Lắng nghe topic lỗi
+            groupId = "notification-group",
+            containerFactory = "orderFailedKafkaListenerContainerFactory" // <-- Dùng factory mới
+    )
+    public void handleOrderFailed(@Payload OrderFailedEvent event) {
+        // (Đây là nơi bạn gửi thông báo "Hết hàng" qua Websocket)
+        log.warn("Order failed (Inventory) for order {}: {}",
+                event.getOrderNumber(), event.getReason());
+    }
 }
