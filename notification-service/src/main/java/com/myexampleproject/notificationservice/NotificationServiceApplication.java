@@ -1,17 +1,16 @@
 package com.myexampleproject.notificationservice;
 
-import com.myexampleproject.notificationservice.event.PaymentFailedEvent;
-import com.myexampleproject.notificationservice.event.PaymentProcessedEvent;
+import com.myexampleproject.common.exception.GlobalExceptionHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.context.annotation.Import;
 
 // THÊM IMPORT NÀY:
-import org.springframework.messaging.handler.annotation.Payload;
 
 
 @SpringBootApplication
+@Import({ GlobalExceptionHandler.class })
 @Slf4j
 public class NotificationServiceApplication {
 

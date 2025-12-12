@@ -1,8 +1,6 @@
 package com.myexampleproject.notificationservice.config;
 
-import com.myexampleproject.notificationservice.event.OrderPlacedEvent;
-import com.myexampleproject.notificationservice.event.PaymentFailedEvent;
-import com.myexampleproject.notificationservice.event.PaymentProcessedEvent;
+import com.myexampleproject.common.event.*;
 import io.confluent.kafka.serializers.json.KafkaJsonSchemaDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -75,6 +73,21 @@ public class KafkaConsumerConfig {
         ConcurrentKafkaListenerContainerFactory<String, PaymentFailedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(paymentFailedConsumerFactory());
+        return factory;
+    }
+
+    @Bean
+    public ConsumerFactory<String, OrderFailedEvent> orderFailedConsumerFactory() {
+        Map<String, Object> props = baseProps();
+        props.put("json.value.type", OrderFailedEvent.class.getName());
+        return new DefaultKafkaConsumerFactory<>(props);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, OrderFailedEvent> orderFailedKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, OrderFailedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(orderFailedConsumerFactory());
         return factory;
     }
 }

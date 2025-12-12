@@ -3,6 +3,7 @@ package com.myexampleproject.orderservice.model;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,7 +25,13 @@ public class OrderLineItems {
 	private BigDecimal price;
 	private Integer quantity;
 
+    private String productName;
+    // Thêm 2 trường này để in hóa đơn cho dễ
+    private String color;
+    private String size;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id")
+    @JsonIgnore
     private Order order;
 }

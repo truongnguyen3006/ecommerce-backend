@@ -1,11 +1,17 @@
 package com.myexampleproject.userservice.controller;
 
+import com.myexampleproject.userservice.dto.AdminUpdateUserRequest;
 import com.myexampleproject.userservice.dto.UserRequest;
 import com.myexampleproject.userservice.dto.UserResponse;
 import com.myexampleproject.userservice.model.User;
 import com.myexampleproject.userservice.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,30 +24,67 @@ import java.util.List;
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserController {
-    private final UserService userService; // TIÊM SERVICE
+    private final UserService userService;
 
-//  ĐẦU VÀO: Dùng DTO Request
+    // ✅ Cho phép đăng ký public (không cần token)
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public User createUser(@RequestBody UserRequest userRequest) {
+    public UserResponse createUser(@RequestBody UserRequest userRequest) {
         return userService.createUser(userRequest);
     }
 
-    @GetMapping
+    // ✅ User có thể tự cập nhật thông tin của chính mình
+    @PatchMapping("/me")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<UserResponse> updateSelf(Authentication authentication,
+                                                   @RequestBody UserRequest req) {
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+        String keycloakId = jwt.getClaim("sub");
+        return ResponseEntity.ok(userService.updateSelfUser(keycloakId, req));
+    }
+
+    // ✅ API lấy thông tin người dùng hiện tại (Dựa trên Token gửi lên)
+    @GetMapping("/me")
     @ResponseStatus(HttpStatus.OK)
-    public List<UserResponse> getAllUsers(){
+    public UserResponse getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
+        // Lấy keycloakId từ token ("sub" là standard claim chứa ID)
+        String keycloakId = jwt.getClaimAsString("sub");
+
+        // Tìm trong DB và trả về
+        // (Lưu ý: Bạn cần thêm hàm findByKeycloakId vào UserRepository nếu chưa có)
+        return userService.getUserByKeycloakId(keycloakId);
+    }
+
+    // ✅ Admin cập nhật trạng thái user
+    @PatchMapping("/admin/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponse updateUserStatus(@PathVariable Long id,
+                                         @RequestBody AdminUpdateUserRequest request) {
+        return userService.updateUserByAdmin(id, request.isEnabled());
+    }
+
+    // ✅ Chỉ admin mới xem danh sách người dùng
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @ResponseStatus(HttpStatus.OK)
+    public List<UserResponse> getAllUsers() {
         return userService.getAllUsers();
     }
-//@PathVariable trích xuất (lấy) giá trị từ một "biến" nằm trên chính đường dẫn URL.
+
+    // ✅ Chỉ admin mới xem thông tin người khác
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @ResponseStatus(HttpStatus.OK)
-    public UserResponse getUserById(@PathVariable Long id){
+    public UserResponse getUserById(@PathVariable Long id) {
         return userService.getUserById(id);
     }
 
+    // ✅ Chỉ admin được quyền xóa
     @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.OK)
-    public void deleteUserById(@PathVariable Long id){
+    @PreAuthorize("hasRole('ADMIN')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteUserById(@PathVariable Long id) {
         userService.deleteUserById(id);
     }
 }
+
