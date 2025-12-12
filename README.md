@@ -74,28 +74,22 @@ Di chuyển vào thư mục chứa file `docker-compose.yml` và chạy lệnh:
 docker-compose up -d
 Lệnh này sẽ khởi động: Kafka, Zookeeper (hoặc KRaft controller), Redis, MySQL, Keycloak, Zipkin, Prometheus, Grafana.
 
-Bước 3: Khởi chạy Microservices
+### Bước 3: Khởi chạy Microservices
+Thứ tự khởi động bắt buộc:
+1. Discovery Server (Eureka) – chờ khởi động xong.
+2. API Gateway – chờ kết nối thành công với Eureka.
+3. Core Services: Inventory, Product, Order, Cart… (Thứ tự không quan trọng).
 
-Thứ tự khởi động bắt buộc để hệ thống hoạt động đúng:
+### Bước 4: Kiểm tra hệ thống (API Endpoints)
 
-Discovery Server (Eureka) – chờ khởi động xong.
+| Method | Endpoint | Mô tả | Auth |
+| --- | --- | --- | --- |
+| GET | http://localhost:8080/api/product | Lấy danh sách sản phẩm | ❌ |
+| POST | http://localhost:8080/auth/login | Đăng nhập (lấy Token từ Keycloak) | ❌ |
+| POST | http://localhost:8080/api/cart/add/{userId} | Thêm sản phẩm vào giỏ hàng | ✅ |
+| POST | http://localhost:8080/api/order | Đặt hàng (Checkout) | ✅ |
 
-API Gateway – chờ kết nối thành công với Eureka.
-
-Core Services: Inventory, Product, Order, Cart… (Thứ tự không quan trọng).
-
-Bước 4: Kiểm tra hệ thống (API Endpoints)
-Method	Endpoint	Mô tả	Auth
-GET	http://localhost:8080/api/product
-	Lấy danh sách sản phẩm	❌
-POST	http://localhost:8080/auth/login
-	Đăng nhập (lấy Token từ Keycloak)	❌
-POST	http://localhost:8080/api/cart/add/{userId}
-	Thêm sản phẩm vào giỏ hàng	✅
-POST	http://localhost:8080/api/order
-	Đặt hàng (Checkout)	✅
-
-Lưu ý: Các API có Auth yêu cầu Header Authorization: Bearer <access_token>
+**Lưu ý:** Các API có Auth yêu cầu Header `Authorization: Bearer <access_token>`.
 📝 License
 
 Dự án này là một phần của đề tài niên luận ngành Mạng máy tính & Truyền thông dữ liệu.
