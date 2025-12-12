@@ -94,4 +94,4 @@ Thứ tự khởi động bắt buộc:
 
 ---
 
-**Phát triển bởi** [Nguyen Lam Truong](https://github.com/truongnguyen3006)
+
