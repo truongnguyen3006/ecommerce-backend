@@ -92,6 +92,6 @@ Thứ tự khởi động bắt buộc:
 **Lưu ý:** Các API có Auth yêu cầu Header `Authorization: Bearer <access_token>`.
 📝 License
 
-Dự án này là một phần của đề tài niên luận ngành Mạng máy tính & Truyền thông dữ liệu.
-Phát triển bởi [Nguyen Lam Truong](https://github.com/truongnguyen3006)
+---
 
+**Phát triển bởi** [Nguyen Lam Truong](https://github.com/truongnguyen3006)
