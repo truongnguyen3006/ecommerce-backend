@@ -29,11 +29,9 @@ services:
   keycloak:
     container_name: keycloak
     image: quay.io/keycloak/keycloak:18.0.0
-    # 👇 SỬA DÒNG NÀY: Đổi "upload_scripts" thành "scripts"
     command: [ "start-dev", "--import-realm", "--features=scripts" ]
 
     environment:
-      # ... (giữ nguyên các biến khác)
       KC_DB: mysql
       KC_DB_URL_HOST: keycloak-mysql
       KC_DB_DATABASE: keycloak
@@ -42,8 +40,8 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HTTP_PORT: 8085
-      KC_HOSTNAME: keycloak
-      KC_HOSTNAME_URL: http://keycloak:8085
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_URL: http://localhost:8085
       KC_HOSTNAME_STRICT: "false"
 
     ports:
@@ -119,6 +117,13 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      # 1. Nạp datasource (có UID df6nugk7yzqpsc)
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      # 2. Nạp cấu hình provider
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      # 3. Nạp CẢ 2 FILE JSON vào trong container
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     networks:
       - micro_net
 
@@ -143,13 +148,46 @@ services:
     networks:
       - micro_net
 
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    environment:
+      PMA_HOST: mysql-business   # Tên service MySQL của bạn
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: root         # Pass bạn đã cài
+    ports:
+      - "8888:80"                # Truy cập qua cổng 8888 để không đụng cổng 80 của Nginx
+    networks:
+      - micro_net
+    depends_on:
+      - mysql-business
+
+  # MySQL chứa dữ liệu nghiệp vụ (Product, Order, User)
+  mysql-business:
+    image: mysql:8
+    container_name: mysql-business
+    ports:
+      - "3306:3306" # Mở cổng 3306 ra ngoài để Spring Boot kết nối vào
+    environment:
+      MYSQL_ROOT_PASSWORD: root  # Pass giống trong application.properties của bạn
+    volumes:
+      # Mount dữ liệu khởi tạo (Chạy 1 lần đầu tiên)
+      - ./mysql-init:/docker-entrypoint-initdb.d
+      # Mount volume để lưu dữ liệu bền vững (nếu muốn)
+      - business-db-data-v2:/var/lib/mysql
+    networks:
+      - micro_net
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 # --- KHAI BÁO TẤT CẢ CÁC NAMED VOLUMES ---
 volumes:
-  product-data:
-  order-data:
-  #  user-data:
-  inventory-data:
   keycloak-db-data:
+  business-db-data-v2:
 #Định nghĩa network
 networks:
   micro_net:

@@ -196,4 +196,41 @@ public class KeycloakService {
         }
     }
 
+    // 1. Hàm lấy ID của user dựa trên username (Để check xem admin có chưa)
+    public String getKeycloakIdByUsername(String username) {
+        String token = getAdminAccessToken();
+        WebClient client = getClient(token);
+        List<JsonNode> users = client.get()
+                .uri(uriBuilder -> uriBuilder.path("/users")
+                        .queryParam("username", username)
+                        .build())
+                .retrieve()
+                .bodyToFlux(JsonNode.class)
+                .collectList()
+                .block();
+
+        if (users != null && !users.isEmpty()) {
+            return users.get(0).get("id").asText();
+        }
+        return null;
+    }
+
+    // 2. Hàm tạo Role nếu chưa tồn tại (Đảm bảo role ADMIN luôn có)
+    public void createRoleIfNotExists(String roleName) {
+        String token = getAdminAccessToken();
+        WebClient client = getClient(token);
+
+        try {
+            // Check xem role có chưa
+            client.get().uri("/roles/" + roleName).retrieve().toBodilessEntity().block();
+        } catch (WebClientResponseException.NotFound e) {
+            // Nếu chưa có (404) thì tạo mới
+            Map<String, String> role = Map.of("name", roleName);
+            client.post().uri("/roles").bodyValue(role).retrieve().toBodilessEntity().block();
+            System.out.println("⚠️ Đã tạo mới Role: " + roleName);
+        } catch (Exception e) {
+            // Ignore nếu lỗi khác
+        }
+    }
+
 }
