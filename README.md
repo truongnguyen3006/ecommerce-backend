@@ -88,6 +88,19 @@ user-service (8088)
 
 payment-service (8089)
 
+📂 Cấu trúc Service & Port
+Service Name	Port	Chức năng chính
+API Gateway	8080	Cổng vào duy nhất, Định tuyến, Rate Limiting, Security.
+Discovery Server	8761	Netflix Eureka (Service Registry).
+Inventory Service	8082	Quản lý kho, Xử lý Kafka Streams Topology.
+Product Service	8083	Quản lý thông tin sản phẩm, Cache dữ liệu đọc nhiều.
+Order Service	8086	Quản lý đơn hàng, Điều phối SAGA.
+Cart Service	8081	Giỏ hàng hiệu năng cao (In-Memory Redis).
+User Service	8088	Quản lý hồ sơ người dùng & Đồng bộ Keycloak.
+Payment Service	8089	Giả lập xử lý thanh toán (Mock Payment).
+Notification	8087	WebSocket Server đẩy thông báo Real-time.
+
+
 notification-service (8087)
 
 
