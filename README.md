@@ -97,18 +97,17 @@ Vui lòng cài đặt các công cụ sau (click để tải):
 
 ## 💾 Hướng dẫn cài đặt & chạy
 
-### 🔹 Bước 1: Tải mã nguồn
+### 1. Clone repository
 
-```bash
 git clone https://github.com/truongnguyen3006/ecommerce-microservices-backend.git
 cd ecommerce-microservices-backend
-
-🔹 Bước 2: Khởi chạy Middleware (Docker)
+2. Start middleware services (Docker)
+bash
+Copy code
 docker-compose up -d
+The following services will be initialized:
 
-⏳ Chờ 2–5 phút, hệ thống sẽ khởi tạo:
-
-Kafka (KRaft)
+Apache Kafka (KRaft mode)
 
 Redis
 
@@ -116,17 +115,20 @@ MySQL
 
 Keycloak
 
-Zipkin, Prometheus, Grafana
+Zipkin
 
-🔹 Bước 3: Chạy Microservices
+Prometheus
 
-Chạy theo thứ tự:
+Grafana
+
+3. Run microservices
+Start services in the following order:
 
 Discovery Server (Eureka) – 8761
 
 API Gateway – 8080
 
-Các service nghiệp vụ (song song):
+Business services (can be run in parallel):
 
 Service	Port
 Cart Service	8081
@@ -136,21 +138,21 @@ Order Service	8086
 Notification Service	8087
 User Service	8088
 Payment Service	8089
-🧪 Kiểm tra API (Postman)
-Method	Endpoint	Mô tả	Auth
-GET	/api/product	Lấy sản phẩm	❌
-POST	/auth/login	Đăng nhập	❌
-POST	/api/cart/add/{userId}	Thêm giỏ hàng	✅
-POST	/api/order/checkout	Đặt hàng (SAGA)	✅
 
-📌 Header cho API có Auth:
+API Testing
+Use Postman or similar tools to test the APIs below:
 
+Method	Endpoint	Description	Auth
+GET	/api/product	Get product list	No
+POST	/auth/login	User login	No
+POST	/api/cart/add/{userId}	Add item to cart	Yes
+POST	/api/order/checkout	Checkout order (SAGA flow)	Yes
+
+For authenticated APIs, include the following HTTP header:
+
+Copy code
 Authorization: Bearer <access_token>
-
-👨‍💻 Tác giả
-
+Author
 Nguyễn Lâm Trường
-
-📚 Khoa Mạng Máy Tính & Truyền Thông
-🏫 Đại học Cần Thơ
-
+Faculty of Computer Networks & Communications
+Can Tho University
