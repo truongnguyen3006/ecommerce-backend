@@ -101,6 +101,4 @@ Payment Service	8089	Giả lập xử lý thanh toán (Mock Payment).
 Notification	8087	WebSocket Server đẩy thông báo Real-time.
 
 
-notification-service (8087)
-
 
