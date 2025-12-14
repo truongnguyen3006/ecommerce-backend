@@ -15,6 +15,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 //@Controller: Báo cho Spring biết đây là một "Bean",nó chuyên xử lý các request
 //@ResponseBody: Tự động chuyển đổi kết quả trả về từ các phương thức
@@ -49,10 +50,14 @@ public class UserController {
     public UserResponse getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
         // Lấy keycloakId từ token ("sub" là standard claim chứa ID)
         String keycloakId = jwt.getClaimAsString("sub");
+        UserResponse userResponse = userService.getUserByKeycloakId(keycloakId);
 
-        // Tìm trong DB và trả về
-        // (Lưu ý: Bạn cần thêm hàm findByKeycloakId vào UserRepository nếu chưa có)
-        return userService.getUserByKeycloakId(keycloakId);
+        Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+        if (realmAccess != null && realmAccess.containsKey("roles")) {
+            List<String> roles = (List<String>) realmAccess.get("roles");
+            userResponse.setRoles(roles); // Nhét role vào để Frontend thấy
+        }
+        return userResponse;
     }
 
     // ✅ Admin cập nhật trạng thái user

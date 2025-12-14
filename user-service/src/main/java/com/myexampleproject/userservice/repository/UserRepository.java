@@ -9,4 +9,5 @@ import java.util.Optional;
 //Long: Tham số thứ hai. Đây là kiểu dữ liệu của Khóa Chính
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByKeycloakId(String keycloakId);
+    Optional<User> findByEmail(String email);
 }
