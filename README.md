@@ -57,7 +57,7 @@ Hệ thống chạy theo mô hình **Hybrid**: Middleware chạy trên Docker, M
 Mở Terminal/CMD và chạy lệnh sau để tải dự án về máy:
 
 ```bash
-git clone [https://github.com/truongnguyen3006/ecommerce-microservices-backend.git](https://github.com/truongnguyen3006/ecommerce-microservices-backend.git)
+git clone https://github.com/truongnguyen3006/ecommerce-microservices-backend.git
 cd ecommerce-microservices-backend
 
 Bước 2: Khởi chạy Hạ tầng (Middleware)
