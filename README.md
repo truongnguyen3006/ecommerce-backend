@@ -10,7 +10,18 @@
 
 Đây là hệ thống **Backend Thương mại điện tử** được xây dựng để giải quyết bài toán chịu tải cao trong các sự kiện **Flash Sale**. Dự án chuyển đổi từ kiến trúc Nguyên khối (Monolithic) sang **Microservices** kết hợp **Event-Driven Architecture**, tối ưu hóa khả năng xử lý hàng ngàn giao dịch mỗi giây.
 
-Trọng tâm của dự án là giải quyết các thách thức về **Giao dịch phân tán (SAGA)**, **Nhất quán dữ liệu** và **Chống bán lố hàng (Oversell)** bằng các công nghệ tiên tiến nhất.
+Trọng tâm của dự án là giải quyết các thách thức về **Giao dịch phân tán (SAGA)**, **Nhất quán dữ liệu** và **Chống bán lố hàng (Oversell)**.
+
+## 🎯 Mục tiêu & Phạm vi kiến trúc
+
+Repo này được sử dụng như một **case study** cho đồ án tốt nghiệp của mình.
+
+Trọng tâm  muốn thể hiện và sẽ tiếp tục trừu tượng hóa trong đồ án là:
+- Cách xử lý **tranh chấp tài nguyên (overselling)** dưới tải cao
+- Đảm bảo **nhất quán dữ liệu giữa các microservices** bằng SAGA
+- Thiết kế **event-driven flow** giữa Order – Inventory – Payment
+
+Các phần như UI, business logic chi tiết, hay tối ưu triển khai production **không phải trọng tâm chính** của repo này.
 
 ---
 
